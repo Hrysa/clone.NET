@@ -12,11 +12,27 @@ public class ClonerTests
 using Clone;
 using System.Collections.Generic;
 
+namespace Test;
+
 [Cloneable]
-public partial class A : If
+public partial class Child
 {
-    private int i = 0;
-    private List<int> arr = new();
+    public int Id = 0;
+}
+
+[Cloneable]
+public partial class A
+{
+    public int Id = 0;
+
+    public List<int> Ints = new();
+
+    public List<List<int>> ListOfList = new();
+    public List<List<string>> ListOfListString = new();
+    public Dictionary<string, string> Meta;
+    public Dictionary<string, Dictionary<string, string>> MetaMeta;
+    public Dictionary<int, int> IdMap;
+    public Child Child;
 }
 ");
 

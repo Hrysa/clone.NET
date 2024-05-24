@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-<!--    <ProjectReference Include="..\CloneGenerator\CloneGenerator.csproj" />-->
+    <ProjectReference Include="..\CloneCore\CloneCore.csproj"/>
+    <ProjectReference Include="..\CloneGenerator\CloneGenerator.csproj" />
   </ItemGroup>
 </Project>

@@ -12,7 +12,7 @@ public abstract class SyntaxBuilder
         Indent = indent;
     }
 
-    protected readonly string Indent;
+    protected string Indent;
     protected StringBuilder _sb = new();
     protected List<SyntaxBuilder> _builders = new();
 
@@ -51,6 +51,9 @@ public class NamespaceBuilder : SyntaxBuilder
 
     protected override void CreateBegin()
     {
+        _sb.AppendLine("using Clone;");
+        _sb.AppendLine();
+
         if (_ns is null)
         {
             return;
@@ -103,19 +106,26 @@ public class ClassBuilder : SyntaxBuilder
 
     protected override void CreateBegin()
     {
+        var model = _compilation.GetSemanticModel(_node.SyntaxTree);
+        var symbol = model.GetDeclaredSymbol(_node) as INamedTypeSymbol;
+
         string clzName = _node.Identifier.NormalizeWhitespace().ToFullString();
         string modifers = string.Join(" ", _node.Modifiers.Select(x => x.NormalizeWhitespace().ToFullString()));
 
-        _sb.AppendLine($"{Indent}{modifers} class {clzName}");
+        _sb.AppendLine($"{Indent}{modifers} class {clzName}: IClone<{clzName}>");
         _sb.AppendLine($"{Indent}{{");
-        _sb.AppendLine($"{Indent}    public {clzName} Clone()");
+        _sb.AppendLine($"{Indent}    public virtual void Clone({clzName} target)");
         _sb.AppendLine($"{Indent}    {{");
-        _sb.AppendLine($"{Indent}        var obj = new {clzName}();");
+
+        if (symbol.BaseType is not null &&
+            SyntaxHelper.GetTypedConstantKind(symbol.BaseType!, _compilation) == TypedConstantKind.Type)
+        {
+            _sb.AppendLine($"{Indent}        base.Clone(target);");
+        }
     }
 
     protected override void CreateEnd()
     {
-        _sb.AppendLine($"{Indent}        return obj;");
         _sb.AppendLine($"{Indent}    }}");
         _sb.AppendLine($"{Indent}}}");
     }
@@ -125,11 +135,15 @@ class FieldBuilder : SyntaxBuilder
 {
     private readonly FieldDeclarationSyntax _node;
     private readonly Compilation _compilation;
+    private int _version;
+    private int _id;
+    private static int _idStore;
 
     public FieldBuilder(FieldDeclarationSyntax node, Compilation compilation, string indent) : base(indent)
     {
         _node = node;
         _compilation = compilation;
+        _id = ++_idStore;
     }
 
     protected override void CreateBegin()
@@ -139,62 +153,142 @@ class FieldBuilder : SyntaxBuilder
         var variable = _node.Declaration.Variables.First();
         var fieldSymbol = model.GetDeclaredSymbol(variable) as IFieldSymbol;
 
-        Console.WriteLine($"[new field] {fieldSymbol!.Type} {fieldSymbol.Type.SpecialType} {fieldSymbol.Type}");
-
-        var t = GetTypedConstantKind(fieldSymbol.Type, _compilation);
-
-        // not primitive
-        if (t == TypedConstantKind.Error)
-        {
-            _sb.AppendLine($"{Indent}    throw new Exception(\"error type {fieldSymbol.Type} {fieldSymbol.Name}\");");
-        }
-
-        if (t == TypedConstantKind.Type)
-        {
-            Console.WriteLine(fieldSymbol.Type.OriginalDefinition.ToString());
-            switch (fieldSymbol.Type.OriginalDefinition.ToString())
-            {
-                case "System.Collections.Generic.List<T>":
-                {
-                    _sb.AppendLine($"{Indent}    obj.{fieldSymbol.Name} = new ({fieldSymbol.Name}.Count);");
-                    break;
-                }
-                default:
-                {
-                    _sb.AppendLine($"{Indent}    throw new Exception(\"unhandled field {fieldSymbol.Type} {fieldSymbol.Name}\");");
-                    break;
-                }
-            }
-            Console.WriteLine("Orgin " + fieldSymbol.Type.OriginalDefinition);
-
-        }
-        else if (t == TypedConstantKind.Array)
-        {
-            _sb.AppendLine(
-                $"{Indent}    obj.{fieldSymbol.Name} = new {((IArrayTypeSymbol)fieldSymbol.Type).ElementType}[{fieldSymbol.Name}.Length];");
-        }
-        else
-        {
-            _sb.AppendLine($"{Indent}    obj.{fieldSymbol.Name} = {fieldSymbol.Name};");
-        }
-
-
-        //
-
-        // Console.WriteLine(_node.Declaration.Variables);
-
-        // _sb.AppendLine($"{Indent} private ");
+        _sb.AppendLine();
+        GenerateExpression((INamedTypeSymbol)fieldSymbol!.Type, $"target.{fieldSymbol.Name}", fieldSymbol.Name, Indent);
     }
 
-    // GenerateExpression()
-    // {
-    //     
-    // }
+    private string GenerateExpression(INamedTypeSymbol type, string left, string right, string Indent)
+    {
+        TypedConstantKind kind = SyntaxHelper.GetTypedConstantKind(type, _compilation);
+        string ver = $"_{_id}_{_version}";
+        string rt = left;
+
+        bool noLeft = left.Length == 0;
+        if (left.Length == 0)
+        {
+            left = $"{type} r{ver}";
+            rt = $"r{ver}";
+        }
+
+        switch (kind)
+        {
+            case TypedConstantKind.Error:
+                _sb.AppendLine(
+                    $"{Indent}    throw new Exception(\"error type {type} {right}\");");
+                break;
+            case TypedConstantKind.Type:
+                if (type.IsGenericType)
+                {
+                    switch (type.ConstructUnboundGenericType().ToString())
+                    {
+                        case "System.Collections.Generic.List<>":
+                        {
+                            _sb.AppendLine($$"""
+                                             {{Indent}}    {{type}} r{{ver}} = new ({{right}}.Count);
+                                             {{Indent}}    {{type}} src{{ver}} = {{right}};
+                                             {{Indent}}    for(int i{{ver}} = 0; i{{ver}} < src{{ver}}.Count; i{{ver}}++)
+                                             {{Indent}}    {
+                                             """);
+                            _version++;
+
+                            var rvar = GenerateExpression((INamedTypeSymbol)type.TypeArguments.First(), string.Empty,
+                                $"src{ver}[i{ver}]", Indent + "    ");
+                            string lvar = noLeft ? $"r{ver}" : left;
+
+                            _sb.AppendLine($$"""{{Indent}}        r{{ver}}.Add({{rvar}});""");
+                            if (!noLeft)
+                            {
+                                _sb.AppendLine($$"""{{Indent}}        {{left}} = r{{ver}};""");
+
+                            }
+                            _sb.AppendLine($$"""
+                                             {{Indent}}    }
+                                             """);
+                            break;
+                        }
+                        case "System.Collections.Generic.Dictionary<,>":
+                        {
+                            _sb.AppendLine($$"""{{Indent}}    {{type}} r{{ver}} = new ();""");
+
+                            if (!noLeft)
+                            {
+                                _sb.AppendLine($$"""{{Indent}}    {{left}} = r{{ver}};""");
+                            }
+
+                            _sb.AppendLine($$"""
+                                             {{Indent}}    {{type}} src{{ver}} = {{right}};
+                                             {{Indent}}    foreach(var kv{{ver}} in  src{{ver}})
+                                             {{Indent}}    {
+                                             """);
+                            _version++;
+                            var rtk = GenerateExpression((INamedTypeSymbol)type.TypeArguments.First(), string.Empty,
+                                $"kv{ver}.Key", Indent + "    ");
+
+                            _version++;
+                            var rtv = GenerateExpression((INamedTypeSymbol)type.TypeArguments.Last(), string.Empty,
+                                $"kv{ver}.Value", Indent + "    ");
+                            string lk = noLeft ? $"r{ver}" : left;
+
+                            _sb.AppendLine($$"""
+                                             {{Indent}}        r{{ver}}.Add({{rtk}}, {{rtv}});
+                                             {{Indent}}    }
+                                             """);
+                            break;
+                        }
+                        default:
+                        {
+                            InjectUnhandledThrow(type, right, Indent);
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    if (type.GetAttributes().Any(x => x.ToString() == "Clone.CloneableAttribute"))
+                    {
+                        _sb.AppendLine($"{Indent}    {left} =  Cloner.Make({right});");
+                        // _sb.AppendLine($"{Indent}    {{");
+                        // _sb.AppendLine($"{Indent}       var method = {right}.GetType().GetMethods().First(x => x.DeclaringType == {right}.GetType());");
+                        // _sb.AppendLine($"{Indent}       method.Invoke({right}, [target]);");
+                        // _sb.AppendLine($"{Indent}    }}");
+                    }
+                    else
+                    {
+                        InjectUnhandledThrow(type, right, Indent);
+                    }
+                }
+
+                break;
+            case TypedConstantKind.Array:
+                _sb.AppendLine(
+                    $"{Indent}    {left} = new {((IArrayTypeSymbol)type).ElementType}[{right}.Length];");
+                break;
+            case TypedConstantKind.Primitive:
+                _sb.AppendLine($"{Indent}    {left} = {right};");
+
+                break;
+            default:
+            {
+                _sb.AppendLine($"{Indent}    // can not determine type {type} {right} ");
+                break;
+            }
+        }
+
+        return rt;
+    }
+
+    private void InjectUnhandledThrow(INamedTypeSymbol type, string def, string indent)
+    {
+        _sb.AppendLine($"{indent}    throw new Exception(\"unhandled field {type} {def}\");");
+    }
 
     protected override void CreateEnd()
     {
     }
+}
 
+public static class SyntaxHelper
+{
     internal static TypedConstantKind GetTypedConstantKind(ITypeSymbol type, Compilation compilation)
     {
         switch (type.SpecialType)
@@ -226,7 +320,7 @@ class FieldBuilder : SyntaxBuilder
                 }
 
                 return TypedConstantKind.Type;
-                // throw new Exception("wtf is this type");
+            // throw new Exception("wtf is this type");
 
             // default:
             //     switch (type.TypeKind)
