@@ -15,7 +15,7 @@ public static class Cloner
 
         if (!Cache.TryGetValue(typ, out var method))
         {
-            var itf = typ.GetInterfaces().Any(x => x == typeof(IClone<T>));
+            bool itf = typ.GetInterfaces().Any(x => x == typeof(IClone<T>));
 
             if (!itf)
             {

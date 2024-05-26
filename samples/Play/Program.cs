@@ -1,26 +1,43 @@
-﻿using Clone;
+﻿using System.Runtime.InteropServices;
+using Clone;
 using Mapster;
+using MemoryPack;
 using Newtonsoft.Json;
 
-var source = new A()
+[DllImport("winmm")]
+static extern void timeBeginPeriod(int t);
+
+timeBeginPeriod(1);
+
+A NewA()
 {
-    Ints = [1, 2, 3, 4],
-    ListOfList = [[1, 1], [2, 2], [3, 3]],
-    ListOfListString = [["aa", "bb"], ["cc"]],
-    Meta = new() { { "a", "b" } },
-    IdMap = new() { { 1, 2 } },
-    MetaMeta = new() { { "meta", new() { { "meta", "value" } } } },
-    Child = new Child()
+    return new A()
     {
-        Id = Random.Shared.Next()
-    },
-    Children = new()
-    {
-        { 1, new Child() { Id = Random.Shared.Next() } },
-        { 2, new FChild() { Id = Random.Shared.Next(), NameF = "F" } },
-        { 3, new MChild() { Id = Random.Shared.Next(), NameM = "M" } },
-    }
-};
+        Id2 = 1111,
+        Ints = [1, 2, 3, 4],
+        ListOfList = [[1, 1], [2, 2], [3, 3]],
+        ListOfListString = [["aa", "bb"], ["cc"]],
+        Meta = new() { { "a", "b" } },
+        IdMap = new() { { 1, 2 } },
+        MetaMeta = new() { { "meta", new() { { "meta", "value" } } } },
+        Child = new Child()
+        {
+            Id = Random.Shared.Next()
+        },
+        Children = new()
+        {
+            { 1, new Child() { Id = Random.Shared.Next() } },
+            { 2, new FChild() { Id = Random.Shared.Next(), NameF = "F" } },
+            { 3, new MChild() { Id = Random.Shared.Next(), NameM = "M" } },
+        },
+        IdSet = new()
+        {
+            { "a", [1, 2, 3] }
+        }
+    };
+}
+
+var source = NewA();
 
 void Measure(Action action)
 {
@@ -32,22 +49,38 @@ void Measure(Action action)
     Console.WriteLine($"bytes: {GC.GetAllocatedBytesForCurrentThread() - i}");
 }
 
-// 178620840
+void Dump<T>(T a, T b)
+{
+    string sourceStr = JsonConvert.SerializeObject(a);
+    string cloneStr = JsonConvert.SerializeObject(b);
+    Console.WriteLine(sourceStr);
+    Console.WriteLine(cloneStr);
+    Console.WriteLine(sourceStr == cloneStr);
+}
+
+Dump(source.Adapt<A>(), Cloner.Make(source));
 
 Measure(() =>
 {
-    for (int i = 0; i < 100000; i++)
+    for (int i = 0; i < 1000000; i++)
     {
-        var clone = Cloner.Make(source);
+        MemoryPackSerializer.Deserialize<A>(MemoryPackSerializer.Serialize(source));
     }
 });
 
+Measure(() =>
+{
+    for (int i = 0; i < 1000000; i++)
+    {
+        source.Adapt<A>();
+    }
+});
 
 Measure(() =>
 {
-    for (int i = 0; i < 100000; i++)
+    for (int i = 0; i < 1000000; i++)
     {
-        var clone = source.Adapt<A>();
+        Cloner.Make(source);
     }
 });
 
@@ -57,12 +90,19 @@ Console.WriteLine(JsonConvert.SerializeObject(Cloner.Make((Child)item)));
 
 var clone = Cloner.Make(source);
 
+
 string sourceStr = JsonConvert.SerializeObject(source);
 string cloneStr = JsonConvert.SerializeObject(clone);
 Console.WriteLine(sourceStr);
 Console.WriteLine(cloneStr);
 
 Console.WriteLine(sourceStr == cloneStr);
+
+[Cloneable]
+public partial class Test
+{
+    public List<A> ints = new();
+}
 
 public partial class A
 {
@@ -73,12 +113,17 @@ interface If
 {
 }
 
+[MemoryPackable]
 [Cloneable]
-public partial class A : If
+public partial class A
 {
-    public int Id = 0;
+    private int Id = 0;
+
+    [CloneIgnore, JsonIgnore] public int Id2 = 0;
+
 
     public List<int> Ints;
+    public Dictionary<string, HashSet<int>> IdSet;
 
     public List<List<int>> ListOfList;
     public List<List<string>> ListOfListString;
@@ -86,10 +131,12 @@ public partial class A : If
     public Dictionary<string, Dictionary<string, string>> MetaMeta;
 
     public Dictionary<int, int> IdMap;
+
     public Child Child;
     public Dictionary<int, Child> Children;
 }
 
+[MemoryPackable]
 [Cloneable]
 public partial class Child
 {
@@ -98,12 +145,14 @@ public partial class Child
 }
 
 
+[MemoryPackable]
 [Cloneable]
 public partial class FChild : Child
 {
     public string NameF;
 }
 
+[MemoryPackable]
 [Cloneable]
 public partial class MChild : Child
 {

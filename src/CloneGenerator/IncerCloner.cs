@@ -27,42 +27,48 @@ public class CloneIncrementalGenerator : IIncrementalGenerator
 
             var semanticModel = compilation.GetSemanticModel(clazz.SyntaxTree);
 
-            var typeSymbol = semanticModel.GetDeclaredSymbol(clazz);
-            if (typeSymbol == null)
+            var clazzSymbol = semanticModel.GetDeclaredSymbol(clazz);
+            if (clazzSymbol == null)
             {
                 return;
             }
 
-            string? ns = typeSymbol.ContainingNamespace.Name;
+            string? ns = clazzSymbol.ContainingNamespace.Name;
 
             if (string.IsNullOrEmpty(ns))
             {
                 ns = null;
             }
 
-            // string? ns = GetNamespace(clazz)?.Name.NormalizeWhitespace().ToFullString();
             var namespaceBuilder = new NamespaceBuilder(ns);
-            var classBuilder = namespaceBuilder.CreateClass(clazz, compilation);
+            var classBuilder = namespaceBuilder.CreateClass(clazzSymbol, compilation);
 
-            foreach (var memberDeclarationSyntax in clazz.Members)
+            foreach (var memberSymbol in clazzSymbol.GetAllMembers())
             {
-                switch (memberDeclarationSyntax)
+                switch (memberSymbol.Kind)
                 {
-                    case FieldDeclarationSyntax field:
+                    case SymbolKind.Field:
                     {
-                        classBuilder.CreateField(field, compilation);
+                        bool ignore = memberSymbol.GetAttributes()
+                            .Any(x => x.ToString() is "Clone.CloneIgnoreAttribute");
+                        if (ignore)
+                        {
+                            break;
+                        }
+
+                        classBuilder.CreateField((IFieldSymbol)memberSymbol, compilation);
+
                         break;
                     }
-                    case PropertyDeclarationSyntax prop:
+                    case SymbolKind.Property:
                     {
-                        classBuilder.CreateProperty(prop);
+                        classBuilder.CreateProperty((IPropertySymbol)memberSymbol);
                         break;
                     }
                 }
             }
 
-
-            ctx.AddSource(classBuilder.GetFullName(), namespaceBuilder.Build());
+            ctx.AddSource(string.Join(".", $"{clazzSymbol}.g.cs"), namespaceBuilder.Build());
         });
     }
 }

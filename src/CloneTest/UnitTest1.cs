@@ -20,10 +20,17 @@ public partial class Child
     public int Id = 0;
 }
 
+public partial class A {
+    public int partialId = 0;
+}
+
 [Cloneable]
 public partial class A
 {
     public int Id = 0;
+
+    [CloneIgnore]
+    public int Id2 = 0;
 
     public List<int> Ints = new();
 
@@ -64,7 +71,7 @@ public partial class A
 
         Assert.That(runResult.Results[0].Exception, Is.EqualTo(null));
 
-        Console.WriteLine(runResult.Results[0].GeneratedSources.First().SourceText);
+        Console.WriteLine(runResult.Results[0].GeneratedSources.Last().SourceText);
         // We can now assert things about the resulting compilation:
         // Assert.IsTrue(diagnostics.IsEmpty); // there were no diagnostics created by the generators
         // Assert.That(outputCompilation.SyntaxTrees.Count(),

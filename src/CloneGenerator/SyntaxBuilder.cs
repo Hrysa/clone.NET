@@ -21,13 +21,24 @@ public abstract class SyntaxBuilder
 
     public string Build()
     {
-        CreateBegin();
-        foreach (var builder in _builders)
+        var childSb = new StringBuilder();
+
+        try
         {
-            _sb.Append(builder.Build());
+            foreach (var builder in _builders)
+            {
+                childSb.Append(builder.Build());
+            }
+        }
+        catch (UnhandledCloneTypeException ex)
+        {
+            childSb.AppendLine(SymbolDisplay.FormatLiteral(ex.Message, false));
         }
 
+        CreateBegin();
+        _sb.Append(childSb);
         CreateEnd();
+
         return _sb.ToString();
     }
 }
@@ -42,9 +53,9 @@ public class NamespaceBuilder : SyntaxBuilder
     }
 
 
-    public ClassBuilder CreateClass(ClassDeclarationSyntax node, Compilation compilation)
+    public ClassBuilder CreateClass(INamedTypeSymbol symbol, Compilation compilation)
     {
-        var builder = new ClassBuilder(node, compilation, _ns, _ns is null ? string.Empty : "    ");
+        var builder = new ClassBuilder(symbol, compilation, _ns, _ns is null ? string.Empty : "    ");
         _builders.Add(builder);
         return builder;
     }
@@ -76,49 +87,44 @@ public class NamespaceBuilder : SyntaxBuilder
 
 public class ClassBuilder : SyntaxBuilder
 {
-    private readonly ClassDeclarationSyntax _node;
+    private readonly INamedTypeSymbol _symbol;
     private readonly Compilation _compilation;
     private readonly string? _ns;
 
-    public ClassBuilder(ClassDeclarationSyntax node, Compilation compilation, string? ns, string indent) : base(indent)
+    public ClassBuilder(INamedTypeSymbol symbol, Compilation compilation, string? ns, string indent) : base(indent)
     {
-        _node = node;
+        _symbol = symbol;
         _compilation = compilation;
         _ns = ns;
     }
 
 
-    public void CreateField(FieldDeclarationSyntax node, Compilation compilation)
+    public void CreateField(IFieldSymbol syntax, Compilation compilation)
     {
-        _builders.Add(new FieldBuilder(node, compilation, Indent + "    "));
+        _builders.Add(new FieldBuilder(syntax, compilation, Indent + "    "));
     }
 
-    public void CreateProperty(PropertyDeclarationSyntax node)
+    public void CreateProperty(IPropertySymbol symbol)
     {
         // TODO
     }
 
     public string GetFullName()
     {
-        string clazzName = _node.Identifier.NormalizeWhitespace().ToFullString();
-        return _ns is null ? clazzName : $"{_ns}.{clazzName}";
+        return _symbol.Name;
     }
 
     protected override void CreateBegin()
     {
-        var model = _compilation.GetSemanticModel(_node.SyntaxTree);
-        var symbol = model.GetDeclaredSymbol(_node) as INamedTypeSymbol;
+        string clazzName = _symbol.Name;
 
-        string clzName = _node.Identifier.NormalizeWhitespace().ToFullString();
-        string modifers = string.Join(" ", _node.Modifiers.Select(x => x.NormalizeWhitespace().ToFullString()));
-
-        _sb.AppendLine($"{Indent}{modifers} class {clzName}: IClone<{clzName}>");
+        _sb.AppendLine($"{Indent}partial class {clazzName}: IClone<{clazzName}>");
         _sb.AppendLine($"{Indent}{{");
-        _sb.AppendLine($"{Indent}    public virtual void Clone({clzName} target)");
+        _sb.AppendLine($"{Indent}    public virtual void Clone({clazzName} target)");
         _sb.AppendLine($"{Indent}    {{");
 
-        if (symbol.BaseType is not null &&
-            SyntaxHelper.GetTypedConstantKind(symbol.BaseType!, _compilation) == TypedConstantKind.Type)
+        if (_symbol.BaseType is not null &&
+            _symbol.BaseType.GetAttributes().Any(x => x.ToString() is "Clone.CloneIgnoreAttribute"))
         {
             _sb.AppendLine($"{Indent}        base.Clone(target);");
         }
@@ -133,28 +139,23 @@ public class ClassBuilder : SyntaxBuilder
 
 class FieldBuilder : SyntaxBuilder
 {
-    private readonly FieldDeclarationSyntax _node;
+    private readonly IFieldSymbol _symbol;
     private readonly Compilation _compilation;
     private int _version;
     private int _id;
     private static int _idStore;
 
-    public FieldBuilder(FieldDeclarationSyntax node, Compilation compilation, string indent) : base(indent)
+    public FieldBuilder(IFieldSymbol symbol, Compilation compilation, string indent) : base(indent)
     {
-        _node = node;
+        _symbol = symbol;
         _compilation = compilation;
         _id = ++_idStore;
     }
 
     protected override void CreateBegin()
     {
-        var model = _compilation.GetSemanticModel(_node.SyntaxTree);
-
-        var variable = _node.Declaration.Variables.First();
-        var fieldSymbol = model.GetDeclaredSymbol(variable) as IFieldSymbol;
-
         _sb.AppendLine();
-        GenerateExpression((INamedTypeSymbol)fieldSymbol!.Type, $"target.{fieldSymbol.Name}", fieldSymbol.Name, Indent);
+        GenerateExpression((INamedTypeSymbol)_symbol!.Type, $"target.{_symbol.Name}", _symbol.Name, Indent);
     }
 
     private string GenerateExpression(INamedTypeSymbol type, string left, string right, string Indent)
@@ -183,24 +184,26 @@ class FieldBuilder : SyntaxBuilder
                     {
                         case "System.Collections.Generic.List<>":
                         {
+                            var argSymbol = (INamedTypeSymbol)type.TypeArguments.First();
+                            var parentVar = noLeft ? "null" : left;
                             _sb.AppendLine($$"""
-                                             {{Indent}}    {{type}} r{{ver}} = new ({{right}}.Count);
+                                             {{Indent}}    {{type}} r{{ver}} = {{parentVar}};
+                                             {{Indent}}    if (r{{ver}} is null) r{{ver}} = new ({{right}}.Count);
                                              {{Indent}}    {{type}} src{{ver}} = {{right}};
-                                             {{Indent}}    for(int i{{ver}} = 0; i{{ver}} < src{{ver}}.Count; i{{ver}}++)
+                                             {{Indent}}    foreach({{argSymbol}} itm{{ver}} in src{{ver}})
                                              {{Indent}}    {
                                              """);
                             _version++;
 
-                            var rvar = GenerateExpression((INamedTypeSymbol)type.TypeArguments.First(), string.Empty,
-                                $"src{ver}[i{ver}]", Indent + "    ");
-                            string lvar = noLeft ? $"r{ver}" : left;
+                            var rvar = GenerateExpression(argSymbol, string.Empty,
+                                $"itm{ver}", Indent + "    ");
 
                             _sb.AppendLine($$"""{{Indent}}        r{{ver}}.Add({{rvar}});""");
                             if (!noLeft)
                             {
                                 _sb.AppendLine($$"""{{Indent}}        {{left}} = r{{ver}};""");
-
                             }
+
                             _sb.AppendLine($$"""
                                              {{Indent}}    }
                                              """);
@@ -208,7 +211,11 @@ class FieldBuilder : SyntaxBuilder
                         }
                         case "System.Collections.Generic.Dictionary<,>":
                         {
-                            _sb.AppendLine($$"""{{Indent}}    {{type}} r{{ver}} = new ();""");
+                            var parentVar = noLeft ? "null" : left;
+                            _sb.AppendLine($$"""
+                                             {{Indent}}    {{type}} r{{ver}} = {{parentVar}};
+                                             {{Indent}}    if (r{{ver}} is null) r{{ver}} = new ();
+                                             """);
 
                             if (!noLeft)
                             {
@@ -227,10 +234,37 @@ class FieldBuilder : SyntaxBuilder
                             _version++;
                             var rtv = GenerateExpression((INamedTypeSymbol)type.TypeArguments.Last(), string.Empty,
                                 $"kv{ver}.Value", Indent + "    ");
-                            string lk = noLeft ? $"r{ver}" : left;
 
                             _sb.AppendLine($$"""
                                              {{Indent}}        r{{ver}}.Add({{rtk}}, {{rtv}});
+                                             {{Indent}}    }
+                                             """);
+                            break;
+                        }
+                        case "System.Collections.Generic.HashSet<>":
+                        {
+                            var parentVar = noLeft ? "null" : left;
+                            _sb.AppendLine($$"""
+                                             {{Indent}}    {{type}} r{{ver}} = {{parentVar}};
+                                             {{Indent}}    if (r{{ver}} is null) r{{ver}} = new ();
+                                             """);
+
+                            if (!noLeft)
+                            {
+                                _sb.AppendLine($$"""{{Indent}}    {{left}} = r{{ver}};""");
+                            }
+
+                            _sb.AppendLine($$"""
+                                             {{Indent}}    {{type}} src{{ver}} = {{right}};
+                                             {{Indent}}    foreach(var itm{{ver}} in  src{{ver}})
+                                             {{Indent}}    {
+                                             """);
+                            _version++;
+                            var rtv = GenerateExpression((INamedTypeSymbol)type.TypeArguments.Last(), string.Empty,
+                                $"itm{ver}", Indent + "    ");
+
+                            _sb.AppendLine($$"""
+                                             {{Indent}}        r{{ver}}.Add({{rtv}});
                                              {{Indent}}    }
                                              """);
                             break;
@@ -279,10 +313,20 @@ class FieldBuilder : SyntaxBuilder
 
     private void InjectUnhandledThrow(INamedTypeSymbol type, string def, string indent)
     {
-        _sb.AppendLine($"{indent}    throw new Exception(\"unhandled field {type} {def}\");");
+        var location = _symbol.Locations.First().GetLineSpan();
+
+        throw new UnhandledCloneTypeException(
+            $"{indent}    throw new Exception(\"unhandled field {_symbol} in {location.Path}:line {location.StartLinePosition.Line}\");");
     }
 
     protected override void CreateEnd()
+    {
+    }
+}
+
+public class UnhandledCloneTypeException : Exception
+{
+    internal UnhandledCloneTypeException(string s) : base(s)
     {
     }
 }
