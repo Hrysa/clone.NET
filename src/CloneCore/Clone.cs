@@ -1,34 +1,46 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
 
 namespace Clone;
 
 public static class Cloner
 {
-    private static readonly Dictionary<Type, MethodInfo> Cache = new();
+    private static readonly Dictionary<Type, Func<object, object>> Cache = new();
 
     public static T Make<T>(T t) where T : new()
     {
-        Type typ = t!.GetType();
+        if (t == null)
+        {
+            return default!;
+        }
+
+        Type typ = t.GetType();
 
         if (!Cache.TryGetValue(typ, out var method))
         {
             bool itf = typ.GetInterfaces().Any(x => x == typeof(IClone<T>));
+            var methodInfo = typ.GetMethods().FirstOrDefault(x => x.DeclaringType == typ && x.Name == "Clone");
 
-            if (!itf)
+            if (!itf || methodInfo is null)
             {
-                throw new Exception("isn't cloneable object");
+                throw new Exception($"{typ} isn't cloneable object");
             }
 
-            method = t.GetType().GetMethods().First(x => x.DeclaringType == typ && x.Name == "Clone");
+            var param = Expression.Parameter(typeof(object));
+            var target = Expression.Variable(typ, "target");
+            var block = Expression.Block([target],
+                Expression.Assign(target, Expression.New(typ)),
+                Expression.Call(Expression.Convert(param, typ), methodInfo, Expression.Convert(target, typ)),
+                target
+            );
+            method = Expression.Lambda<Func<object, object>>(block, param).Compile();
+
             Cache[typ] = method;
         }
 
-        T target = (T)Activator.CreateInstance(typ);
-        method.Invoke(t, [target]);
-
-        return target;
+        return (T)method(t);
     }
 }
