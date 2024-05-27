@@ -1,7 +1,6 @@
 ﻿using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace CloneGenerator;
 
@@ -124,7 +123,7 @@ public class ClassBuilder : SyntaxBuilder
         _sb.AppendLine($"{Indent}    {{");
 
         if (_symbol.BaseType is not null &&
-            _symbol.BaseType.GetAttributes().Any(x => x.ToString() is "Clone.CloneIgnoreAttribute"))
+            _symbol.BaseType.GetAttributes().Any(x => x.ToString() is "Clone.CloneableAttribute"))
         {
             _sb.AppendLine($"{Indent}        base.Clone(target);");
         }
@@ -171,6 +170,9 @@ class FieldBuilder : SyntaxBuilder
             rt = $"r{ver}";
         }
 
+        var parentVar = noLeft ? "null" : left;
+        var comment = noLeft ? "//" : "";
+
         switch (kind)
         {
             case TypedConstantKind.Error:
@@ -185,86 +187,99 @@ class FieldBuilder : SyntaxBuilder
                         case "System.Collections.Generic.List<>":
                         {
                             var argSymbol = (INamedTypeSymbol)type.TypeArguments.First();
-                            var parentVar = noLeft ? "null" : left;
+
                             _sb.AppendLine($$"""
                                              {{Indent}}    {{type}} r{{ver}} = {{parentVar}};
-                                             {{Indent}}    if (r{{ver}} is null) r{{ver}} = new ({{right}}.Count);
-                                             {{Indent}}    {{type}} src{{ver}} = {{right}};
-                                             {{Indent}}    foreach({{argSymbol}} itm{{ver}} in src{{ver}})
-                                             {{Indent}}    {
+                                             {{Indent}}    if ({{right}} is null) {
+                                             {{Indent}}        {{comment}} {{parentVar}} = null;
+                                             {{Indent}}    }
+                                             {{Indent}}    else {
+                                             {{Indent}}        if (r{{ver}} is null) r{{ver}} = new ({{right}}.Count);
+                                             {{Indent}}        {{type}} src{{ver}} = {{right}};
+                                             {{Indent}}        foreach({{argSymbol}} itm{{ver}} in src{{ver}})
+                                             {{Indent}}        {
                                              """);
                             _version++;
 
                             var rvar = GenerateExpression(argSymbol, string.Empty,
-                                $"itm{ver}", Indent + "    ");
+                                $"itm{ver}", Indent + "        ");
 
-                            _sb.AppendLine($$"""{{Indent}}        r{{ver}}.Add({{rvar}});""");
+                            _sb.AppendLine($$"""{{Indent}}            r{{ver}}.Add({{rvar}});""");
                             if (!noLeft)
                             {
                                 _sb.AppendLine($$"""{{Indent}}        {{left}} = r{{ver}};""");
                             }
 
                             _sb.AppendLine($$"""
+                                             {{Indent}}        }
                                              {{Indent}}    }
                                              """);
                             break;
                         }
                         case "System.Collections.Generic.Dictionary<,>":
                         {
-                            var parentVar = noLeft ? "null" : left;
                             _sb.AppendLine($$"""
                                              {{Indent}}    {{type}} r{{ver}} = {{parentVar}};
-                                             {{Indent}}    if (r{{ver}} is null) r{{ver}} = new ();
+                                             {{Indent}}    if ({{right}} is null) {
+                                             {{Indent}}        {{comment}}{{parentVar}} = null;
+                                             {{Indent}}    }
+                                             {{Indent}}    else {
+                                             {{Indent}}        if (r{{ver}} is null) r{{ver}} = new ();
                                              """);
 
                             if (!noLeft)
                             {
-                                _sb.AppendLine($$"""{{Indent}}    {{left}} = r{{ver}};""");
+                                _sb.AppendLine($$"""{{Indent}}        {{left}} = r{{ver}};""");
                             }
 
                             _sb.AppendLine($$"""
-                                             {{Indent}}    {{type}} src{{ver}} = {{right}};
-                                             {{Indent}}    foreach(var kv{{ver}} in  src{{ver}})
-                                             {{Indent}}    {
+                                             {{Indent}}        {{type}} src{{ver}} = {{right}};
+                                             {{Indent}}        foreach(var kv{{ver}} in  src{{ver}})
+                                             {{Indent}}        {
                                              """);
                             _version++;
                             var rtk = GenerateExpression((INamedTypeSymbol)type.TypeArguments.First(), string.Empty,
-                                $"kv{ver}.Key", Indent + "    ");
+                                $"kv{ver}.Key", Indent + "        ");
 
                             _version++;
                             var rtv = GenerateExpression((INamedTypeSymbol)type.TypeArguments.Last(), string.Empty,
-                                $"kv{ver}.Value", Indent + "    ");
+                                $"kv{ver}.Value", Indent + "        ");
 
                             _sb.AppendLine($$"""
-                                             {{Indent}}        r{{ver}}.Add({{rtk}}, {{rtv}});
+                                             {{Indent}}            r{{ver}}.Add({{rtk}}, {{rtv}});
+                                             {{Indent}}        }
                                              {{Indent}}    }
                                              """);
                             break;
                         }
                         case "System.Collections.Generic.HashSet<>":
                         {
-                            var parentVar = noLeft ? "null" : left;
                             _sb.AppendLine($$"""
                                              {{Indent}}    {{type}} r{{ver}} = {{parentVar}};
-                                             {{Indent}}    if (r{{ver}} is null) r{{ver}} = new ();
+                                             {{Indent}}    if ({{right}} is null) {
+                                             {{Indent}}        {{comment}}{{parentVar}} = null;
+                                             {{Indent}}    }
+                                             {{Indent}}    else {
+                                             {{Indent}}        if (r{{ver}} is null) r{{ver}} = new ();
                                              """);
 
                             if (!noLeft)
                             {
-                                _sb.AppendLine($$"""{{Indent}}    {{left}} = r{{ver}};""");
+                                _sb.AppendLine($$"""{{Indent}}        {{left}} = r{{ver}};""");
                             }
 
                             _sb.AppendLine($$"""
-                                             {{Indent}}    {{type}} src{{ver}} = {{right}};
-                                             {{Indent}}    foreach(var itm{{ver}} in  src{{ver}})
-                                             {{Indent}}    {
+                                             {{Indent}}        {{type}} src{{ver}} = {{right}};
+                                             {{Indent}}        foreach(var itm{{ver}} in  src{{ver}})
+                                             {{Indent}}        {
                                              """);
                             _version++;
                             var rtv = GenerateExpression((INamedTypeSymbol)type.TypeArguments.Last(), string.Empty,
-                                $"itm{ver}", Indent + "    ");
+                                $"itm{ver}", Indent + "        ");
 
                             _sb.AppendLine($$"""
-                                             {{Indent}}        r{{ver}}.Add({{rtv}});
+                                             {{Indent}}            r{{ver}}.Add({{rtv}});
+                                             {{Indent}}        }
                                              {{Indent}}    }
                                              """);
                             break;
