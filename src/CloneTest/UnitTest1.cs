@@ -27,6 +27,7 @@ public partial class A {
 [Cloneable]
 public partial class A
 {
+    private int i { get; set; }
     public int Id = 0;
 
     [CloneIgnore]

@@ -43,7 +43,11 @@ public class CloneIncrementalGenerator : IIncrementalGenerator
             var namespaceBuilder = new NamespaceBuilder(ns);
             var classBuilder = namespaceBuilder.CreateClass(clazzSymbol, compilation);
 
-            foreach (var memberSymbol in clazzSymbol.GetAllMembers())
+            var members = clazzSymbol.GetMembers()
+                .Where(x => x is (IFieldSymbol or IPropertySymbol) and
+                { IsStatic: false, IsImplicitlyDeclared: false, CanBeReferencedByName: true });
+
+            foreach (var memberSymbol in members)
             {
                 switch (memberSymbol.Kind)
                 {
