@@ -154,19 +154,19 @@ class FieldBuilder : SyntaxBuilder
     protected override void CreateBegin()
     {
         _sb.AppendLine();
-        GenerateExpression((INamedTypeSymbol)_symbol!.Type, $"target.{_symbol.Name}", _symbol.Name, Indent);
+        GenerateExpression(_symbol!.Type, $"target.{_symbol.Name}", _symbol.Name, Indent);
     }
 
-    private string GenerateExpression(INamedTypeSymbol type, string left, string right, string Indent)
+    private string GenerateExpression(ITypeSymbol symbol, string left, string right, string Indent)
     {
-        TypedConstantKind kind = SyntaxHelper.GetTypedConstantKind(type, _compilation);
+        TypedConstantKind kind = SyntaxHelper.GetTypedConstantKind(symbol, _compilation);
         string ver = $"_{_id}_{_version}";
         string rt = left;
 
         bool noLeft = left.Length == 0;
         if (left.Length == 0)
         {
-            left = $"{type} r{ver}";
+            left = $"{symbol} r{ver}";
             rt = $"r{ver}";
         }
 
@@ -177,9 +177,11 @@ class FieldBuilder : SyntaxBuilder
         {
             case TypedConstantKind.Error:
                 _sb.AppendLine(
-                    $"{Indent}    throw new Exception(\"error type {type} {right}\");");
+                    $"{Indent}    throw new Exception(\"error type {symbol} {right}\");");
                 break;
             case TypedConstantKind.Type:
+            {
+                var type = (INamedTypeSymbol)symbol;
                 if (type.IsGenericType)
                 {
                     switch (type.ConstructUnboundGenericType().ToString())
@@ -204,10 +206,12 @@ class FieldBuilder : SyntaxBuilder
                             var rvar = GenerateExpression(argSymbol, string.Empty,
                                 $"itm{ver}", Indent + "        ");
 
+                            // int i = 2;
+                            // int[][] a = new int[][i];
                             _sb.AppendLine($$"""{{Indent}}            r{{ver}}.Add({{rvar}});""");
                             if (!noLeft)
                             {
-                                _sb.AppendLine($$"""{{Indent}}        {{left}} = r{{ver}};""");
+                                _sb.AppendLine($$"""{{Indent}}            {{left}} = r{{ver}};""");
                             }
 
                             _sb.AppendLine($$"""
@@ -286,39 +290,71 @@ class FieldBuilder : SyntaxBuilder
                         }
                         default:
                         {
-                            InjectUnhandledThrow(type, right, Indent);
+                            ThrowUnhandled(type, right, Indent);
                             break;
                         }
                     }
                 }
                 else
                 {
-                    if (type.GetAttributes().Any(x => x.ToString() == "Clone.CloneableAttribute"))
+                    if (!type.GetAttributes().Any(x => x.ToString() == "Clone.CloneableAttribute"))
                     {
-                        _sb.AppendLine($"{Indent}    {left} =  Cloner.Make({right});");
-                        // _sb.AppendLine($"{Indent}    {{");
-                        // _sb.AppendLine($"{Indent}       var method = {right}.GetType().GetMethods().First(x => x.DeclaringType == {right}.GetType());");
-                        // _sb.AppendLine($"{Indent}       method.Invoke({right}, [target]);");
-                        // _sb.AppendLine($"{Indent}    }}");
+                        ThrowUnhandled(type, right, Indent);
                     }
-                    else
-                    {
-                        InjectUnhandledThrow(type, right, Indent);
-                    }
+
+                    _sb.AppendLine($"{Indent}    {left} =  Cloner.Make({right});");
+                }
+            }
+                break;
+            case TypedConstantKind.Array:
+            {
+                var type = (IArrayTypeSymbol)symbol;
+                var s = type.ToString();
+                var newSyntax = s = s.Remove(s.IndexOf('[')) + $"[{right}.Length" + s.Substring(s.IndexOf('[') + 1);
+                _sb.AppendLine($$"""
+                                 {{Indent}}    {{type}} r{{ver}} = {{parentVar}};
+                                 {{Indent}}    if ({{right}} is null) {
+                                 {{Indent}}        {{comment}}{{parentVar}} = null;
+                                 {{Indent}}    }
+                                 {{Indent}}    else {
+                                 {{Indent}}        if (r{{ver}} is null) r{{ver}} = new {{newSyntax}};
+                                 """);
+
+                // _sb.AppendLine(
+                // $"{Indent}    {left} = new {type.ElementType}[{right}.Length];");
+                if (SyntaxHelper.GetTypedConstantKind(type.ElementType, _compilation) is TypedConstantKind.Primitive)
+                {
+                    _sb.AppendLine($$"""
+                                     {{Indent}}        {{right}}.CopyTo(r{{ver}}.AsSpan());
+                                     {{Indent}}        {{comment}} {{parentVar}} = r{{ver}};
+                                     {{Indent}}    }
+                                     """);
+                }
+                else
+                {
+                    _sb.AppendLine($"{Indent}        for(int i{ver} = 0; i{ver} < {right}.Length; i{ver}++)");
+                    _sb.AppendLine($"{Indent}        {{");
+                    _version++;
+                    var rtv = GenerateExpression(type.ElementType, string.Empty,
+                        $"{right}[i{ver}]", Indent + "        ");
+
+                    _sb.AppendLine($$"""
+                                     {{Indent}}            r{{ver}}[i{{ver}}] = {{rtv}};
+                                     {{Indent}}        }
+                                     {{Indent}}        {{comment}} {{parentVar}} = r{{ver}};
+                                     {{Indent}}    }
+                                     """);
                 }
 
                 break;
-            case TypedConstantKind.Array:
-                _sb.AppendLine(
-                    $"{Indent}    {left} = new {((IArrayTypeSymbol)type).ElementType}[{right}.Length];");
-                break;
+            }
             case TypedConstantKind.Primitive:
                 _sb.AppendLine($"{Indent}    {left} = {right};");
 
                 break;
             default:
             {
-                _sb.AppendLine($"{Indent}    // can not determine type {type} {right} ");
+                ThrowUnhandled(symbol, right, Indent);
                 break;
             }
         }
@@ -326,7 +362,7 @@ class FieldBuilder : SyntaxBuilder
         return rt;
     }
 
-    private void InjectUnhandledThrow(INamedTypeSymbol type, string def, string indent)
+    private void ThrowUnhandled(ITypeSymbol type, string def, string indent)
     {
         var location = _symbol.Locations.First().GetLineSpan();
 

@@ -20,13 +20,22 @@ public partial class Child
     public int Id = 0;
 }
 
+[Cloneable]
+partial class Base {
+    int BaseId = 0;
+}
+
 public partial class A {
     public int partialId = 0;
 }
 
 [Cloneable]
-public partial class A
+public partial class A : Base
 {
+    public Child[][] AArr2;
+    public Child[] AArr;
+    public int[][] intArr2;
+    public int[] intArr;
     private int i { get; set; }
     public int Id = 0;
 

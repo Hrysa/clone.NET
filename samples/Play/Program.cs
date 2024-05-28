@@ -13,7 +13,12 @@ A NewA()
 {
     return new A()
     {
+        IdArr = [1,2,3],
+        IdArr2 = [[1],[2]],
+        ChildArr = [new Child(){Id = Random.Shared.Next()}],
+        ChildArr2 = [[new Child(){Id = Random.Shared.Next()}]],
         Id2 = 1111,
+
         Ints = [1, 2, 3, 4],
         ListOfList = [[1, 1], [2, 2], [3, 3]],
         ListOfListString = [["aa", "bb"], ["cc"]],
@@ -60,29 +65,29 @@ void Dump<T>(T a, T b)
 
 Dump(source.Adapt<A>(), Cloner.Make(source));
 
-Measure(() =>
-{
-    for (int i = 0; i < 1000000; i++)
-    {
-        MemoryPackSerializer.Deserialize<A>(MemoryPackSerializer.Serialize(source));
-    }
-});
+// Measure(() =>
+// {
+//     for (int i = 0; i < 1000000; i++)
+//     {
+//         MemoryPackSerializer.Deserialize<A>(MemoryPackSerializer.Serialize(source));
+//     }
+// });
 
-Measure(() =>
-{
-    for (int i = 0; i < 1000000; i++)
-    {
-        source.Adapt<A>();
-    }
-});
-
-Measure(() =>
-{
-    for (int i = 0; i < 1000000; i++)
-    {
-        Cloner.Make(source);
-    }
-});
+// Measure(() =>
+// {
+//     for (int i = 0; i < 1000000; i++)
+//     {
+//         source.Adapt<A>();
+//     }
+// });
+//
+// Measure(() =>
+// {
+//     for (int i = 0; i < 1000000; i++)
+//     {
+//         Cloner.Make(source);
+//     }
+// });
 
 var item = new MChild() { Id = Random.Shared.Next(), NameM = "M" };
 
@@ -98,6 +103,15 @@ Console.WriteLine(cloneStr);
 
 Console.WriteLine(sourceStr == cloneStr);
 
+// ((IZ)new Z2()).Clone();
+
+
+// int[][] a = new int[][];
+
+
+Console.WriteLine(JsonConvert.SerializeObject(Cloner.Make((Z)new Z2() {i = 2, i2 = 3})));
+((Z)new Z2()).A();
+
 [Cloneable]
 public partial class Test
 {
@@ -108,6 +122,30 @@ public partial class A
 {
     public int Anthor = 0;
 }
+
+[Cloneable]
+partial class Z
+{
+    public int i = 1;
+
+    public virtual void A()
+    {
+        Console.WriteLine(111);
+    }
+
+}
+
+[Cloneable]
+partial class Z2 : Z
+{
+    public int i2 = 1;
+
+    public virtual void A()
+    {
+        Console.WriteLine(222);
+    }
+}
+
 
 interface If
 {
@@ -121,8 +159,13 @@ public partial class A
 
     [CloneIgnore, JsonIgnore] public int Id2 = 0;
 
-
+    public int[] IdArr;
+    public int[][] IdArr2;
+    public Child[] ChildArr;
+    public Child[][] ChildArr2;
     public List<int> Ints;
+
+
     public Dictionary<string, HashSet<int>> IdSet;
 
     public List<List<int>> ListOfList;
@@ -130,7 +173,9 @@ public partial class A
     public Dictionary<string, string> Meta;
     public Dictionary<string, Dictionary<string, string>> MetaMeta;
 
+
     public Dictionary<int, int> IdMap;
+
 
     public Child Child;
     public Dictionary<int, Child> Children;
