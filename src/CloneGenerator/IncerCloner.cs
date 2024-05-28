@@ -45,7 +45,7 @@ public class CloneIncrementalGenerator : IIncrementalGenerator
 
             var members = clazzSymbol.GetMembers()
                 .Where(x => x is (IFieldSymbol or IPropertySymbol) and
-                { IsStatic: false, IsImplicitlyDeclared: false, CanBeReferencedByName: true });
+                    { IsStatic: false, IsImplicitlyDeclared: false, CanBeReferencedByName: true });
 
             foreach (var memberSymbol in members)
             {
@@ -60,13 +60,26 @@ public class CloneIncrementalGenerator : IIncrementalGenerator
                             break;
                         }
 
-                        classBuilder.CreateField((IFieldSymbol)memberSymbol, compilation);
+                        classBuilder.CreateField(memberSymbol, compilation);
 
                         break;
                     }
                     case SymbolKind.Property:
                     {
-                        classBuilder.CreateProperty((IPropertySymbol)memberSymbol);
+                        var hasBody = false;
+                        foreach (var reference in memberSymbol.DeclaringSyntaxReferences)
+                        {
+                            if (reference.GetSyntax() is PropertyDeclarationSyntax { ExpressionBody: not null })
+                            {
+                                hasBody = true;
+                                break;
+                            }
+                        }
+
+                        if (hasBody)
+                            break;
+
+                        classBuilder.CreateField(memberSymbol, compilation);
                         break;
                     }
                 }

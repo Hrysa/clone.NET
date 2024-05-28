@@ -98,7 +98,7 @@ public class ClassBuilder : SyntaxBuilder
     }
 
 
-    public void CreateField(IFieldSymbol syntax, Compilation compilation)
+    public void CreateField(ISymbol syntax, Compilation compilation)
     {
         _builders.Add(new FieldBuilder(syntax, compilation, Indent + "    "));
     }
@@ -138,13 +138,13 @@ public class ClassBuilder : SyntaxBuilder
 
 class FieldBuilder : SyntaxBuilder
 {
-    private readonly IFieldSymbol _symbol;
+    private readonly ISymbol _symbol;
     private readonly Compilation _compilation;
     private int _version;
     private int _id;
     private static int _idStore;
 
-    public FieldBuilder(IFieldSymbol symbol, Compilation compilation, string indent) : base(indent)
+    public FieldBuilder(ISymbol symbol, Compilation compilation, string indent) : base(indent)
     {
         _symbol = symbol;
         _compilation = compilation;
@@ -154,7 +154,21 @@ class FieldBuilder : SyntaxBuilder
     protected override void CreateBegin()
     {
         _sb.AppendLine();
-        GenerateExpression(_symbol!.Type, $"target.{_symbol.Name}", _symbol.Name, Indent);
+        ITypeSymbol typeSymbol = null;
+        switch (_symbol)
+        {
+            case IFieldSymbol s:
+                typeSymbol = s.Type;
+                break;
+            case IPropertySymbol s:
+                typeSymbol = s.Type;
+                break;
+            default:
+                ThrowUnhandled();
+                break;
+        }
+
+        GenerateExpression(typeSymbol!, $"target.{_symbol.Name}", _symbol.Name, Indent);
     }
 
     private string GenerateExpression(ITypeSymbol symbol, string left, string right, string Indent)
@@ -290,7 +304,7 @@ class FieldBuilder : SyntaxBuilder
                         }
                         default:
                         {
-                            ThrowUnhandled(type, right, Indent);
+                            ThrowUnhandled();
                             break;
                         }
                     }
@@ -299,7 +313,7 @@ class FieldBuilder : SyntaxBuilder
                 {
                     if (!type.GetAttributes().Any(x => x.ToString() == "Clone.CloneableAttribute"))
                     {
-                        ThrowUnhandled(type, right, Indent);
+                        ThrowUnhandled();
                     }
 
                     _sb.AppendLine($"{Indent}    {left} =  Cloner.Make({right});");
@@ -354,7 +368,7 @@ class FieldBuilder : SyntaxBuilder
                 break;
             default:
             {
-                ThrowUnhandled(symbol, right, Indent);
+                ThrowUnhandled();
                 break;
             }
         }
@@ -362,12 +376,12 @@ class FieldBuilder : SyntaxBuilder
         return rt;
     }
 
-    private void ThrowUnhandled(ITypeSymbol type, string def, string indent)
+    private void ThrowUnhandled()
     {
         var location = _symbol.Locations.First().GetLineSpan();
 
         throw new UnhandledCloneTypeException(
-            $"{indent}    throw new Exception(\"unhandled field {_symbol} in {location.Path}:line {location.StartLinePosition.Line}\");");
+            $"throw new Exception(\"unhandled field {_symbol} in {location.Path}:line {location.StartLinePosition.Line}\");");
     }
 
     protected override void CreateEnd()

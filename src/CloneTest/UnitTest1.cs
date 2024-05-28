@@ -32,11 +32,12 @@ public partial class A {
 [Cloneable]
 public partial class A : Base
 {
+    private int i2 => i;
+    private int i { get; set; }
     public Child[][] AArr2;
     public Child[] AArr;
     public int[][] intArr2;
     public int[] intArr;
-    private int i { get; set; }
     public int Id = 0;
 
     [CloneIgnore]
