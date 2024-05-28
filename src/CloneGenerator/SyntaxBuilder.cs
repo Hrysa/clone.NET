@@ -154,7 +154,6 @@ class FieldBuilder : SyntaxBuilder
 
     protected override void CreateBegin()
     {
-        _sb.AppendLine();
         ITypeSymbol typeSymbol = null;
         switch (_symbol)
         {
@@ -168,7 +167,8 @@ class FieldBuilder : SyntaxBuilder
                     if (reference.GetSyntax() is PropertyDeclarationSyntax node &&
                         !node.IsNoBackingFieldGetterSetter())
                     {
-                        Helper.ThrowUnhandled(_symbol);
+                        // not { set; get; } like
+                        return;
                     }
                 }
 
@@ -178,6 +178,7 @@ class FieldBuilder : SyntaxBuilder
                 break;
         }
 
+        _sb.AppendLine();
         GenerateExpression(typeSymbol!, $"target.{_symbol.Name}", _symbol.Name, Indent);
     }
 
@@ -212,7 +213,7 @@ class FieldBuilder : SyntaxBuilder
                     {
                         case "System.Collections.Generic.List<>":
                         {
-                            var argSymbol = (INamedTypeSymbol)type.TypeArguments.First();
+                            var argSymbol = type.TypeArguments.First();
 
                             _sb.AppendLine($$"""
                                              {{Indent}}    {{type}} r{{ver}} = {{parentVar}};
@@ -266,11 +267,11 @@ class FieldBuilder : SyntaxBuilder
                                              {{Indent}}        {
                                              """);
                             _version++;
-                            var rtk = GenerateExpression((INamedTypeSymbol)type.TypeArguments.First(), string.Empty,
+                            var rtk = GenerateExpression(type.TypeArguments.First(), string.Empty,
                                 $"kv{ver}.Key", Indent + "        ");
 
                             _version++;
-                            var rtv = GenerateExpression((INamedTypeSymbol)type.TypeArguments.Last(), string.Empty,
+                            var rtv = GenerateExpression(type.TypeArguments.Last(), string.Empty,
                                 $"kv{ver}.Value", Indent + "        ");
 
                             _sb.AppendLine($$"""
@@ -302,7 +303,7 @@ class FieldBuilder : SyntaxBuilder
                                              {{Indent}}        {
                                              """);
                             _version++;
-                            var rtv = GenerateExpression((INamedTypeSymbol)type.TypeArguments.Last(), string.Empty,
+                            var rtv = GenerateExpression(type.TypeArguments.Last(), string.Empty,
                                 $"itm{ver}", Indent + "        ");
 
                             _sb.AppendLine($$"""
