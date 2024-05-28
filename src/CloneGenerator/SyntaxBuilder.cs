@@ -345,8 +345,6 @@ class FieldBuilder : SyntaxBuilder
                                  {{Indent}}        if (r{{ver}} is null) r{{ver}} = new {{newSyntax}};
                                  """);
 
-                // _sb.AppendLine(
-                // $"{Indent}    {left} = new {type.ElementType}[{right}.Length];");
                 if (SyntaxHelper.GetTypedConstantKind(type.ElementType, _compilation) is TypedConstantKind.Primitive)
                 {
                     _sb.AppendLine($$"""
@@ -373,6 +371,7 @@ class FieldBuilder : SyntaxBuilder
 
                 break;
             }
+            case TypedConstantKind.Enum:
             case TypedConstantKind.Primitive:
                 _sb.AppendLine($"{Indent}    {left} = {right};");
 

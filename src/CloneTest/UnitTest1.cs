@@ -25,6 +25,10 @@ partial class Base {
     int BaseId = 0;
 }
 
+enum EA {
+    A = 1;
+}
+
 public partial class A {
     public int partialId = 0;
 }
@@ -32,6 +36,7 @@ public partial class A {
 [Cloneable]
 public partial class A : Base
 {
+    EA a;
     // private int i2 => i;
     // private int i3 { get { return 1; } }
     // private int i4 { get; }
