@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace CloneGenerator;
 
@@ -162,9 +163,18 @@ class FieldBuilder : SyntaxBuilder
                 break;
             case IPropertySymbol s:
                 typeSymbol = s.Type;
+                foreach (var reference in _symbol.DeclaringSyntaxReferences)
+                {
+                    if (reference.GetSyntax() is PropertyDeclarationSyntax node &&
+                        !node.IsNoBackingFieldGetterSetter())
+                    {
+                        Helper.ThrowUnhandled(_symbol);
+                    }
+                }
+
                 break;
             default:
-                ThrowUnhandled();
+                Helper.ThrowUnhandled(_symbol);
                 break;
         }
 
@@ -304,7 +314,7 @@ class FieldBuilder : SyntaxBuilder
                         }
                         default:
                         {
-                            ThrowUnhandled();
+                            Helper.ThrowUnhandled(_symbol);
                             break;
                         }
                     }
@@ -313,7 +323,7 @@ class FieldBuilder : SyntaxBuilder
                 {
                     if (!type.GetAttributes().Any(x => x.ToString() == "Clone.CloneableAttribute"))
                     {
-                        ThrowUnhandled();
+                        Helper.ThrowUnhandled(_symbol);
                     }
 
                     _sb.AppendLine($"{Indent}    {left} =  Cloner.Make({right});");
@@ -368,7 +378,7 @@ class FieldBuilder : SyntaxBuilder
                 break;
             default:
             {
-                ThrowUnhandled();
+                Helper.ThrowUnhandled(_symbol);
                 break;
             }
         }
@@ -376,13 +386,6 @@ class FieldBuilder : SyntaxBuilder
         return rt;
     }
 
-    private void ThrowUnhandled()
-    {
-        var location = _symbol.Locations.First().GetLineSpan();
-
-        throw new UnhandledCloneTypeException(
-            $"throw new Exception(\"unhandled field {_symbol} in {location.Path}:line {location.StartLinePosition.Line}\");");
-    }
 
     protected override void CreateEnd()
     {

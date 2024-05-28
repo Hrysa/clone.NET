@@ -45,7 +45,9 @@ public class CloneIncrementalGenerator : IIncrementalGenerator
 
             var members = clazzSymbol.GetMembers()
                 .Where(x => x is (IFieldSymbol or IPropertySymbol) and
-                    { IsStatic: false, IsImplicitlyDeclared: false, CanBeReferencedByName: true });
+                    { IsStatic: false, IsImplicitlyDeclared: false, CanBeReferencedByName: true })
+                .Where(x => !x.GetAttributes()
+                    .Any(x => x.ToString() is "Clone.CloneIgnoreAttribute"));
 
             foreach (var memberSymbol in members)
             {
@@ -53,32 +55,12 @@ public class CloneIncrementalGenerator : IIncrementalGenerator
                 {
                     case SymbolKind.Field:
                     {
-                        bool ignore = memberSymbol.GetAttributes()
-                            .Any(x => x.ToString() is "Clone.CloneIgnoreAttribute");
-                        if (ignore)
-                        {
-                            break;
-                        }
-
                         classBuilder.CreateField(memberSymbol, compilation);
 
                         break;
                     }
                     case SymbolKind.Property:
                     {
-                        var hasBody = false;
-                        foreach (var reference in memberSymbol.DeclaringSyntaxReferences)
-                        {
-                            if (reference.GetSyntax() is PropertyDeclarationSyntax { ExpressionBody: not null })
-                            {
-                                hasBody = true;
-                                break;
-                            }
-                        }
-
-                        if (hasBody)
-                            break;
-
                         classBuilder.CreateField(memberSymbol, compilation);
                         break;
                     }

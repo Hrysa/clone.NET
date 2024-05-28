@@ -157,6 +157,8 @@ public partial class A
 {
     private int Id = 0;
 
+    private int ID { get; }
+
     [CloneIgnore, JsonIgnore] public int Id2 = 0;
 
     public int[] IdArr;

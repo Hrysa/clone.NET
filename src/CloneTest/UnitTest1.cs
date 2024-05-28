@@ -32,7 +32,9 @@ public partial class A {
 [Cloneable]
 public partial class A : Base
 {
-    private int i2 => i;
+    // private int i2 => i;
+    // private int i3 { get { return 1; } }
+    // private int i4 { get; }
     private int i { get; set; }
     public Child[][] AArr2;
     public Child[] AArr;
